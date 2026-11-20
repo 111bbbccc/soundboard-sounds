@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Soundboard</title>
+<style>
+  :root {
+    --bg: #000;
+    --panel: rgba(10, 10, 12, .78);
+    --line: #26262c;
+    --text: #f4f4f6;
+    --muted: #8d8d97;
+    --accent: #ffb547;
+    --stop: #ff5d73;
+    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #000; color: var(--text); min-height: 100vh; }
+  #sky { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; }
+  .wrap { position: relative; z-index: 1; max-width: 1000px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font-size: 2rem; margin: 8px 0 16px; letter-spacing: .5px; }
+
+  .search { position: relative; }
+  .search input {
+    width: 100%; padding: 14px 16px 14px 16px; font-size: 1.1rem; font-family: inherit;
+    border-radius: 14px; border: 2px solid var(--line); background: var(--panel); color: var(--text);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  }
+  .search input::placeholder { color: var(--muted); }
+  .search input:focus { outline: none; border-color: var(--accent); }
+
+  .controls {
+    margin-top: 14px; padding: 14px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 14px;
+    display: grid; gap: 14px;
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .btn {
+    font-family: inherit; font-size: .95rem; padding: 9px 14px; border-radius: 10px;
+    border: 2px solid var(--line); background: transparent; color: var(--text); cursor: pointer;
+  }
+  .btn:hover { border-color: var(--muted); }
+  .btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #1a1405; font-weight: bold; }
+  .btn.stop { background: var(--stop); border-color: var(--stop); color: #fff; font-weight: bold; }
+  .btn.stop:hover { filter: brightness(1.1); }
+  .slider { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .95rem; }
+  .slider input { width: 150px; accent-color: var(--accent); }
+  .slider output { color: var(--text); min-width: 3.2em; }
+
+  .status { margin: 14px 2px 10px; color: var(--muted); display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .status b { color: var(--text); font-weight: normal; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .pad { position: relative; }
+  .play {
+    width: 100%; min-height: 96px; padding: 12px 34px 12px 12px; border: 0; border-radius: 16px;
+    background: hsl(var(--h) 45% 36%); color: #fff; font-family: inherit; font-size: 1rem;
+    text-align: left; cursor: pointer; word-break: break-word;
+    box-shadow: inset 0 -5px 0 rgba(0,0,0,.25);
+    transition: transform .08s;
+  }
+  .play:hover { background: hsl(var(--h) 50% 42%); }
+  .play:active { transform: translateY(2px); box-shadow: inset 0 -2px 0 rgba(0,0,0,.25); }
+  .pad.playing .play { background: hsl(var(--h) 80% 52%); outline: 3px solid #fff; }
+  .fav {
+    position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border: 0; border-radius: 50%;
+    background: rgba(0,0,0,.25); color: #fff; font-size: 1.1rem; cursor: pointer; line-height: 1;
+  }
+  .fav[aria-pressed="true"] { color: var(--accent); }
+  .empty { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 40px 10px; }
+
+  .hint { margin-top: 30px; color: var(--muted); font-size: .85rem; text-align: center; }
+  kbd { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .play { transition: none; } }
+  @media (max-width: 480px) { .slider input { width: 110px; } h1 { font-size: 1.6rem; } }
+</style>
+</head>
+<body>
+<canvas id="sky" aria-hidden="true"></canvas>
+<div class="wrap">
+  <h1>My Soundboard</h1>
+
+  <div class="search">
+    <input id="search" type="search" placeholder="Search for a sound..." autocomplete="off" aria-label="Search sounds">
+  </div>
+
+  <div class="controls">
+    <div class="row">
+      <button class="btn stop" id="stopAll">Stop all</button>
+      <button class="btn" id="loop" aria-pressed="false">Loop</button>
+      <button class="btn" id="overlap" aria-pressed="true">Play many at once</button>
+      <button class="btn" id="favOnly" aria-pressed="false">Favorites only</button>
+      <button class="btn" id="random">Random sound</button>
+    </div>
+    <div class="row">
+      <label class="slider">Speed
+        <input id="speed" type="range" min="0.25" max="3" step="0.05" value="1">
+        <output id="speedOut">1.00x</output>
+      </label>
+      <label class="slider">Volume
+        <input id="volume" type="range" min="0" max="1" step="0.05" value="1">
+        <output id="volumeOut">100%</output>
+      </label>
+      <button class="btn" id="pitch" aria-pressed="false">Pitch changes with speed</button>
+      <button class="btn" id="resetCtl">Reset</button>
+    </div>
+  </div>
+
+  <div class="status">
+    <span id="playing">Ready</span>
+    <span id="count"></span>
+  </div>
+
+  <div class="grid" id="grid"><div class="empty">Loading sounds...</div></div>
+
+  <p class="hint">Tip: press <kbd>/</kbd> to search. Press <kbd>Esc</kbd> to stop all sounds.</p>
+</div>
+
+<script>
+  // ====== CHANGE THESE THREE LINES IF NEEDED ======
+  const USER = "111bbbccc";
+  const REPO = "soundboard-sounds";
+  const BRANCH = "main";
+  // ================================================
+
+  const CDN = `https://cdn.jsdelivr.net/gh/${USER}/${REPO}@${BRANCH}/`;
+  const AUDIO = /\.(mp3|wav|ogg|m4a|aac|flac)$/i;
+  const $ = id => document.getElementById(id);
+
+  let sounds = [];                 // {path, name, hue}
+  const active = new Map();        // path -> {audio, pad}
+  const opts = { loop: false, overlap: true, favOnly: false, pitch: false, speed: 1, volume: 1 };
+
+  // ---- Favorites (saved in this browser) ----
+  let favs = new Set();
+  try { favs = new Set(JSON.parse(localStorage.getItem("favs") || "[]")); } catch (e) {}
+  function saveFavs() { try { localStorage.setItem("favs", JSON.stringify([...favs])); } catch (e) {} }
+
+  // ---- Names and colors ----
+  function niceName(path) {
+    const file = path.split("/").pop();
+    return file.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim();
+  }
+  function hueFor(text) {
+    let h = 0;
+    for (const c of text) h = (h * 31 + c.charCodeAt(0)) % 360;
+    return h;
+  }
+  const urlFor = path => CDN + path.split("/").map(encodeURIComponent).join("/");
+
+  // ---- Load the file list ----
+  async function loadFiles() {
+    try {
+      const r = await fetch(`https://api.github.com/repos/${USER}/${REPO}/git/trees/${BRANCH}?recursive=1`);
+      if (!r.ok) throw new Error("GitHub failed");
+      const data = await r.json();
+      return data.tree.filter(f => f.type === "blob" && AUDIO.test(f.path)).map(f => f.path);
+    } catch (e) {
+      const r = await fetch(`https://data.jsdelivr.com/v1/packages/gh/${USER}/${REPO}@${BRANCH}?structure=flat`);
+      const data = await r.json();
+      return data.files.map(f => f.name.replace(/^\//, "")).filter(n => AUDIO.test(n));
+    }
+  }
+
+  // ---- Show the pads ----
+  function render() {
+    const q = $("search").value.trim().toLowerCase();
+    const list = sounds.filter(s =>
+      (!q || s.name.toLowerCase().includes(q)) && (!opts.favOnly || favs.has(s.path)));
+    const grid = $("grid");
+    grid.innerHTML = "";
+
+    if (list.length === 0) {
+      const msg = document.createElement("div");
+      msg.className = "empty";
+      msg.textContent = sounds.length === 0 ? "No sounds found. Upload .mp3 files to your GitHub repo."
+        : opts.favOnly && !q ? "No favorites yet. Tap the star on a sound to save it."
+        : "No sounds match your search.";
+      grid.appendChild(msg);
+    }
+
+    list.forEach(s => {
+      const pad = document.createElement("div");
+      pad.className = "pad" + (active.has(s.path) ? " playing" : "");
+      pad.style.setProperty("--h", s.hue);
+
+      const play = document.createElement("button");
+      play.className = "play";
+      play.textContent = s.name;
+      play.onclick = () => toggle(s);
+
+      const fav = document.createElement("button");
+      fav.className = "fav";
+      fav.textContent = favs.has(s.path) ? "★" : "☆";
+      fav.setAttribute("aria-pressed", favs.has(s.path));
+      fav.setAttribute("aria-label", "Favorite " + s.name);
+      fav.onclick = () => {
+        favs.has(s.path) ? favs.delete(s.path) : favs.add(s.path);
+        saveFavs();
+        render();
+      };
+
+      pad.append(play, fav);
+      grid.appendChild(pad);
+      if (active.has(s.path)) active.get(s.path).pad = pad;
+    });
+
+    $("count").textContent = `${list.length} of ${sounds.length} sounds`;
+  }
+
+  // ---- Play and stop ----
+  function toggle(s) {
+    if (active.has(s.path)) { stop(s.path); return; }
+    if (!opts.overlap) stopAll();
+
+    const audio = new Audio(urlFor(s.path));
+    audio.loop = opts.loop;
+    audio.volume = opts.volume;
+    audio.playbackRate = opts.speed;
+    audio.preservesPitch = !opts.pitch;
+    audio.mozPreservesPitch = !opts.pitch;
+    audio.webkitPreservesPitch = !opts.pitch;
+
+    active.set(s.path, { audio, pad: null, name: s.name });
+    audio.onended = () => stop(s.path);
+    audio.onerror = () => { stop(s.path); $("playing").textContent = `Could not play "${s.name}".`; };
+    audio.play().catch(() => stop(s.path));
+    render();
+    updateStatus();
+  }
+
+  function stop(path) {
+    const item = active.get(path);
+    if (!item) return;
+    item.audio.pause();
+    item.audio.currentTime = 0;
+    active.delete(path);
+    render();
+    updateStatus();
+  }
+
+  function stopAll() { [...active.keys()].forEach(stop); }
+
+  function updateStatus() {
+    const names = [...active.values()].map(i => i.name);
+    $("playing").innerHTML = names.length ? "Playing: <b></b>" : "Ready";
+    if (names.length) $("playing").querySelector("b").textContent = names.join(", ");
+  }
+
+  function eachActive(fn) { active.forEach(i => fn(i.audio)); }
+
+  // ---- Buttons and sliders ----
+  function flip(id, key, after) {
+    $(id).onclick = () => {
+      opts[key] = !opts[key];
+      $(id).setAttribute("aria-pressed", opts[key]);
+      if (after) after();
+    };
+  }
+  flip("loop", "loop", () => eachActive(a => a.loop = opts.loop));
+  flip("overlap", "overlap");
+  flip("favOnly", "favOnly", render);
+  flip("pitch", "pitch", () => eachActive(a => {
+    a.preservesPitch = !opts.pitch; a.mozPreservesPitch = !opts.pitch; a.webkitPreservesPitch = !opts.pitch;
+  }));
+
+  $("stopAll").onclick = stopAll;
+  $("random").onclick = () => {
+    if (!sounds.length) return;
+    toggle(sounds[Math.floor(Math.random() * sounds.length)]);
+  };
+
+  $("speed").oninput = e => {
+    opts.speed = parseFloat(e.target.value);
+    $("speedOut").textContent = opts.speed.toFixed(2) + "x";
+    eachActive(a => a.playbackRate = opts.speed);
+  };
+  $("volume").oninput = e => {
+    opts.volume = parseFloat(e.target.value);
+    $("volumeOut").textContent = Math.round(opts.volume * 100) + "%";
+    eachActive(a => a.volume = opts.volume);
+  };
+  $("resetCtl").onclick = () => {
+    $("speed").value = 1; $("speed").oninput({ target: $("speed") });
+    $("volume").value = 1; $("volume").oninput({ target: $("volume") });
+  };
+
+  $("search").oninput = render;
+
+  document.addEventListener("keydown", e => {
+    const typing = document.activeElement === $("search");
+    if (e.key === "/" && !typing) { e.preventDefault(); $("search").focus(); }
+    if (e.key === "Escape") { stopAll(); if (typing) $("search").blur(); }
+  });
+
+  // ---- Constellation background ----
+  (function () {
+    const cv = $("sky"), ctx = cv.getContext("2d");
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let w = 0, h = 0, dots = [];
+    const mouse = { x: -9999, y: -9999 };
+    const LINK = 140;                 // how far dots connect
+
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      w = window.innerWidth; h = window.innerHeight;
+      cv.width = w * dpr; cv.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const n = Math.max(40, Math.min(130, Math.round(w * h / 12000)));
+      dots = Array.from({ length: n }, () => ({
+        x: Math.random() * w, y: Math.random() * h,
+        vx: (Math.random() - .5) * .25, vy: (Math.random() - .5) * .25,
+        r: Math.random() * 1.2 + .6,
+        tw: Math.random() * Math.PI * 2          // twinkle start
+      }));
+    }
+
+    function frame(t) {
+      ctx.clearRect(0, 0, w, h);
+      for (const d of dots) {
+        if (!still) {
+          d.x += d.vx; d.y += d.vy;
+          if (d.x < -20) d.x = w + 20; if (d.x > w + 20) d.x = -20;
+          if (d.y < -20) d.y = h + 20; if (d.y > h + 20) d.y = -20;
+        }
+      }
+      // lines between near dots
+      for (let i = 0; i < dots.length; i++) {
+        for (let j = i + 1; j < dots.length; j++) {
+          const dx = dots[i].x - dots[j].x, dy = dots[i].y - dots[j].y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < LINK) {
+            ctx.strokeStyle = `rgba(190, 200, 255, ${(1 - dist / LINK) * 0.22})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(dots[i].x, dots[i].y); ctx.lineTo(dots[j].x, dots[j].y); ctx.stroke();
+          }
+        }
+        // lines to the mouse
+        const mx = dots[i].x - mouse.x, my = dots[i].y - mouse.y;
+        const md = Math.hypot(mx, my);
+        if (md < 170) {
+          ctx.strokeStyle = `rgba(255, 220, 160, ${(1 - md / 170) * 0.4})`;
+          ctx.beginPath(); ctx.moveTo(dots[i].x, dots[i].y); ctx.lineTo(mouse.x, mouse.y); ctx.stroke();
+        }
+      }
+      // dots (soft twinkle)
+      for (const d of dots) {
+        const a = .55 + .35 * Math.sin(t / 1400 + d.tw);
+        ctx.fillStyle = `rgba(235, 240, 255, ${a})`;
+        ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill();
+      }
+      if (!still) requestAnimationFrame(frame);
+    }
+
+    window.addEventListener("resize", () => { resize(); if (still) frame(0); });
+    window.addEventListener("pointermove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+    window.addEventListener("pointerleave", () => { mouse.x = mouse.y = -9999; });
+    resize();
+    requestAnimationFrame(frame);
+  })();
+
+  // ---- Start ----
+  loadFiles()
+    .then(files => {
+      sounds = files.sort((a, b) => niceName(a).localeCompare(niceName(b)))
+        .map(path => ({ path, name: niceName(path), hue: hueFor(niceName(path)) }));
+      render();
+    })
+    .catch(() => {
+      $("grid").innerHTML = '<div class="empty">Could not load the sounds. Check your internet and try again.</div>';
+    });
+</script>
+</body>
+</html>
